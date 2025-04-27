@@ -1,8 +1,6 @@
---[[
-    Blade Ball Working AutoParry
-    by zxwhgdsushgs
-    GitHub: riti1556
-]]
+-- Blade Ball Working AutoParry
+-- by zxwhgdsushgs
+-- GitHub: riti1556
 
 -- Сервисы
 local Players = game:GetService("Players")
@@ -15,7 +13,7 @@ local VirtualInputManager = game:GetService("VirtualInputManager")
 local player = Players.LocalPlayer
 local character = player.Character or player.CharacterAdded:Wait()
 local rootPart = character:WaitForChild("HumanoidRootPart")
-local parryDistance = 30 -- увеличенное расстояние для надежности
+local parryDistance = 30 -- расстояние для парирования
 local parryButtonPressed = false
 local scriptEnabled = true
 local parryCount = 0
@@ -131,25 +129,6 @@ function Parry()
     VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.F, false, game)
     wait(0.1)
     VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.F, false, game)
-    
-    -- Метод 2: Попытка найти и вызвать удаленное событие
-    for _, v in pairs(ReplicatedStorage:GetDescendants()) do
-        if v:IsA("RemoteEvent") and (string.find(v.Name:lower(), "parry") or v.Name:lower() == "parry") then
-            v:FireServer()
-            break
-        end
-    end
-    
-    -- Метод 3: Попытка нажать на кнопку в интерфейсе
-    for _, gui in pairs(player.PlayerGui:GetDescendants()) do
-        if (gui:IsA("TextButton") or gui:IsA("ImageButton")) and 
-           (string.find(gui.Name:lower(), "parry") or (gui.Text and string.find(gui.Text:lower(), "parry"))) then
-            for _, signal in pairs(getconnections(gui.MouseButton1Click)) do
-                signal:Fire()
-            end
-            break
-        end
-    end
     
     -- Обновляем счетчик
     parryCount = parryCount + 1
