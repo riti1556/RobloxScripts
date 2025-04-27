@@ -131,19 +131,248 @@ end
 -- Функция расчета времени до контакта с мячом
 local function TimeToImpact(ball)
     if not ball or not humanoidRootPart then return 999 end
+--[[
+    Blade Ball Advanced Trainer v3
+    by zxwhgdsushgs
+    GitHub: riti1556
     
-    local distance = (ball.Position - humanoidRootPart.Position).Magnitude
-    local ballVelocity = ball:FindFirstChild("Velocity")
-    
-    if not ballVelocity or ballVelocity.Value.Magnitude == 0 then
-        return distance / 10 -- Примерная скорость если нет точных данных
+    Автоматический парирование и использование способностей
+]]
+
+-- Сервисы Roblox
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
+-- Получаем объекты игрока
+local player = Players.LocalPlayer
+local character = player.Character or player.CharacterAdded:Wait()
+local humanoidRootPart = character:WaitForChild("HumanoidRootPart")
+
+-- Настройки скрипта
+local PARRY_DISTANCE = 15 -- Увеличиваем дистанцию для надежности
+local PARRY_COOLDOWN = 0.5 -- Задержка между парированиями
+local lastParryTime = 0
+local parryCount = 0  -- Счетчик успешных парирований
+local scriptActive = true  -- Флаг активности скрипта
+
+-- Создаем GUI для отображения статуса
+local function CreateStatusGUI()
+    -- Проверяем, не существует ли уже наш GUI
+    if player.PlayerGui:FindFirstChild("BladeballAutoParryGUI") then
+        player.PlayerGui:FindFirstChild("BladeballAutoParryGUI"):Destroy()
     end
     
-    return distance / ballVelocity.Value.Magnitude
+    -- Создаем основное окно
+    local ScreenGui = Instance.new("ScreenGui")
+    ScreenGui.Name = "BladeballAutoParryGUI"
+    ScreenGui.ResetOnSpawn = false
+    ScreenGui.Parent = player.PlayerGui
+    
+    -- Создаем рамку статуса
+    local StatusFrame = Instance.new("Frame")
+    StatusFrame.Name = "StatusFrame"
+    StatusFrame.Size = UDim2.new(0, 200, 0, 100)
+    StatusFrame.Position = UDim2.new(0, 10, 0, 10)
+    StatusFrame.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+    StatusFrame.BackgroundTransparency = 0.5
+    StatusFrame.BorderSizePixel = 2
+    StatusFrame.BorderColor3 = Color3.fromRGB(0, 255, 0)  -- Зеленая рамка, если скрипт активен
+    StatusFrame.Parent = ScreenGui
+    
+    -- Заголовок
+    local TitleLabel = Instance.new("TextLabel")
+    TitleLabel.Name = "TitleLabel"
+    TitleLabel.Size = UDim2.new(1, 0, 0, 25)
+    TitleLabel.BackgroundTransparency = 0.7
+    TitleLabel.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+    TitleLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+    TitleLabel.Font = Enum.Font.SourceSansBold
+    TitleLabel.TextSize = 14
+    TitleLabel.Text = "AutoParry Статус"
+    TitleLabel.Parent = StatusFrame
+    
+    -- Статус скрипта
+    local StatusLabel = Instance.new("TextLabel")
+    StatusLabel.Name = "StatusLabel"
+    StatusLabel.Size = UDim2.new(1, 0, 0, 25)
+    StatusLabel.Position = UDim2.new(0, 0, 0, 25)
+    StatusLabel.BackgroundTransparency = 1
+    StatusLabel.TextColor3 = Color3.fromRGB(0, 255, 0)  -- Зеленый, если активен
+    StatusLabel.Font = Enum.Font.SourceSans
+    StatusLabel.TextSize = 14
+    StatusLabel.Text = "АКТИВЕН"
+    StatusLabel.Parent = StatusFrame
+    
+    -- Информация о парированиях
+    local ParryCountLabel = Instance.new("TextLabel")
+    ParryCountLabel.Name = "ParryCountLabel"
+    ParryCountLabel.Size = UDim2.new(1, 0, 0, 25)
+    ParryCountLabel.Position = UDim2.new(0, 0, 0, 50)
+    ParryCountLabel.BackgroundTransparency = 1
+    ParryCountLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+    ParryCountLabel.Font = Enum.Font.SourceSans
+    ParryCountLabel.TextSize = 14
+    ParryCountLabel.Text = "Парирований: 0"
+    ParryCountLabel.Parent = StatusFrame
+    
+    -- Кнопка включения/выключения
+    local ToggleButton = Instance.new("TextButton")
+    ToggleButton.Name = "ToggleButton"
+    ToggleButton.Size = UDim2.new(1, 0, 0, 25)
+    ToggleButton.Position = UDim2.new(0, 0, 0, 75)
+    ToggleButton.BackgroundColor3 = Color3.fromRGB(255, 0, 0)  -- Красная кнопка для выключения
+    ToggleButton.BorderSizePixel = 1
+    ToggleButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+    ToggleButton.Font = Enum.Font.SourceSans
+    ToggleButton.TextSize = 14
+    ToggleButton.Text = "Выключить"
+    ToggleButton.Parent = StatusFrame
+    
+    -- Обработчик нажатия
+    ToggleButton.MouseButton1Click:Connect(function()
+        scriptActive = not scriptActive
+        
+        if scriptActive then
+            StatusLabel.Text = "АКТИВЕН"
+            StatusLabel.TextColor3 = Color3.fromRGB(0, 255, 0)  -- Зеленый
+            StatusFrame.BorderColor3 = Color3.fromRGB(0, 255, 0)
+            ToggleButton.BackgroundColor3 = Color3.fromRGB(255, 0, 0)
+            ToggleButton.Text = "Выключить"
+        else
+            StatusLabel.Text = "НЕАКТИВЕН"
+            StatusLabel.TextColor3 = Color3.fromRGB(255, 0, 0)  -- Красный
+            StatusFrame.BorderColor3 = Color3.fromRGB(255, 0, 0)
+            ToggleButton.BackgroundColor3 = Color3.fromRGB(0, 255, 0)
+            ToggleButton.Text = "Включить"
+        end
+    end)
+    
+    -- Делаем рамку перетаскиваемой
+    local isDragging = false
+    local dragStart = nil
+    local startPos = nil
+
+    local function updateDrag(input)
+        local delta = input.Position - dragStart
+        StatusFrame.Position = UDim2.new(
+            startPos.X.Scale,
+            startPos.X.Offset + delta.X,
+            startPos.Y.Scale,
+            startPos.Y.Offset + delta.Y
+        )
+    end
+    
+    TitleLabel.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 then
+            isDragging = true
+            dragStart = input.Position
+            startPos = StatusFrame.Position
+        end
+    end)
+    
+    TitleLabel.InputEnded:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 then
+            isDragging = false
+        end
+    end)
+    
+    TitleLabel.InputChanged:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseMovement and isDragging then
+            updateDrag(input)
+        end
+    end)
+    
+    return StatusFrame, ParryCountLabel
 end
+
+-- Функция парирования (использует Roblox Remote Events вместо VirtualInput)
+local function Parry()
+    -- Проверяем, активен ли скрипт
+    if not scriptActive then
+        return
+    end
+    
+    -- Проверяем кулдаун
+    local currentTime = tick()
+    if currentTime - lastParryTime < PARRY_COOLDOWN then
+        return
+    end
+    
+    -- Ищем удаленное событие парирования
+    local parryRemote = ReplicatedStorage:FindFirstChild("Parry")
+    if not parryRemote then
+        parryRemote = ReplicatedStorage:FindFirstChild("ParryButtonPress")
+    end
+    
+    if not parryRemote then
+        -- Если не нашли конкретное remote, попробуем найти любое, содержащее "Parry" в названии
+        for _, remote in pairs(ReplicatedStorage:GetDescendants()) do
+            if remote:IsA("RemoteEvent") and string.match(remote.Name:lower(), "parry") then
+                parryRemote = remote
+                break
+            end
+        end
+    end
+    
+    local parrySuccess = false
+    
+    -- Если нашли remote, вызываем его
+    if parryRemote and parryRemote:IsA("RemoteEvent") then
+        parryRemote:FireServer()
+        parrySuccess = true
+        print("Парирование выполнено через RemoteEvent: " .. parryRemote.Name)
+    else
+        -- Запасной вариант: попробуем найти ключевую кнопку
+        local parryButton = nil
+        for _, gui in pairs(player.PlayerGui:GetDescendants()) do
+            if (gui:IsA("TextButton") or gui:IsA("ImageButton")) and 
+               (string.match(gui.Name:lower(), "parry") or (gui.Text and string.match(gui.Text:lower(), "parry"))) then
+                parryButton = gui
+                break
+            end
+        end
+        
+        if parryButton then
+            -- Симулируем нажатие кнопки через MouseButton1Click
+            for _, signal in pairs(getconnections(parryButton.MouseButton1Click)) do
+                signal:Fire()
+            end
+            parrySuccess = true
+            print("Парирование выполнено через кнопку GUI")
+        else
+            -- Последняя попытка - искать функции, связанные с парированием
+            local success = pcall(function()
+                game:GetService("Players").LocalPlayer.Character.Parry:FireServer()
+            end)
+            if success then
+                parrySuccess = true
+                print("Парирование выполнено через Character.Parry")
+            else
+                print("Ошибка: Не удалось найти способ парирования")
+            end
+        end
+    end
+    
+    if parrySuccess then
+        lastParryTime = currentTime
+        parryCount = parryCount + 1
+        if statusGUI and parryCountLabel then
+            parryCountLabel.Text = "Парирований: " .. parryCount
+        end
+    end
+end
+
+-- Создаем GUI для отображения статуса
+local statusGUI, parryCountLabel = CreateStatusGUI()
 
 -- Основной цикл отслеживания мяча
 RunService.Heartbeat:Connect(function()
+    -- Проверяем, активен ли скрипт
+    if not scriptActive then
+        return
+    end
+    
     -- Проверяем существование персонажа и его корневой части
     character = player.Character
     if not character then return end
@@ -151,21 +380,56 @@ RunService.Heartbeat:Connect(function()
     humanoidRootPart = character:FindFirstChild("HumanoidRootPart")
     if not humanoidRootPart then return end
     
-    -- Ищем мяч на игровой сцене
-    local ball = workspace:FindFirstChild("Ball")
-    if ball then
-        local distance = (ball.Position - humanoidRootPart.Position).Magnitude
-        
-        -- Если мяч в диапазоне парирования и движется к игроку
-        if distance <= PARRY_DISTANCE and IsBallComingTowards(ball) and not parryingInProgress then
-            print("Парирование! Дистанция: " .. distance)
-            Parry()
+    -- Ищем все мячи на сцене
+    local balls = {}
+    for _, obj in pairs(workspace:GetChildren()) do
+        if obj.Name == "Ball" or string.match(obj.Name:lower(), "ball") then
+            table.insert(balls, obj)
         end
     end
     
-    -- Проверяем готовность способности и используем её
-    if IsAbilityReady() then
-        UseAbility()
+    -- Если мячей нет, то выходим
+    if #balls == 0 then return end
+    
+    -- Находим ближайший мяч
+    local closestBall = nil
+    local closestDistance = math.huge
+    
+    for _, ball in pairs(balls) do
+        if ball:IsA("BasePart") then
+            local distance = (ball.Position - humanoidRootPart.Position).Magnitude
+            if distance < closestDistance then
+                closestBall = ball
+                closestDistance = distance
+            end
+        end
+    end
+    
+    -- Если есть ближайший мяч и он в зоне парирования
+    if closestBall and closestDistance <= PARRY_DISTANCE then
+        -- Проверяем, движется ли он к нам
+        local ballVelocity = closestBall:FindFirstChild("Velocity") or closestBall:FindFirstChild("LinearVelocity")
+        local movingTowardsUs = true
+        
+        if ballVelocity then
+            local directionToPlayer = (humanoidRootPart.Position - closestBall.Position).Unit
+            local ballDirection
+            if ballVelocity:IsA("VectorForce") then
+                ballDirection = ballVelocity.Force.Unit
+            else
+                ballDirection = ballVelocity.Value.Unit
+            end
+            
+            -- Скалярное произведение для определения направления
+            local dotProduct = directionToPlayer:Dot(ballDirection)
+            movingTowardsUs = (dotProduct > 0)
+        end
+        
+        -- Если мяч движется к нам и близко, парируем
+        if movingTowardsUs then
+            print("Мяч обнаружен на расстоянии: " .. closestDistance)
+            Parry()
+        end
     end
 end)
 
@@ -174,7 +438,45 @@ player.CharacterAdded:Connect(function(newCharacter)
     character = newCharacter
     humanoidRootPart = newCharacter:WaitForChild("HumanoidRootPart")
     print("Персонаж загружен. Авто-парирование активировано!")
+    
+    -- Обновляем GUI
+    if statusGUI then
+        statusGUI.BorderColor3 = Color3.fromRGB(0, 255, 0)
+        statusGUI.StatusLabel.Text = "АКТИВЕН"
+        statusGUI.StatusLabel.TextColor3 = Color3.fromRGB(0, 255, 0)
+    end
+end)
+
+-- Функция для обработки горячих клавиш
+local userInputService = game:GetService("UserInputService")
+userInputService.InputBegan:Connect(function(input, gameProcessed)
+    if not gameProcessed and input.KeyCode == Enum.KeyCode.P then
+        -- Переключаем статус скрипта при нажатии клавиши P
+        scriptActive = not scriptActive
+        
+        if statusGUI then
+            local statusLabel = statusGUI:FindFirstChild("StatusLabel")
+            local toggleButton = statusGUI:FindFirstChild("ToggleButton")
+            
+            if statusLabel and toggleButton then
+                if scriptActive then
+                    statusLabel.Text = "АКТИВЕН"
+                    statusLabel.TextColor3 = Color3.fromRGB(0, 255, 0)
+                    statusGUI.BorderColor3 = Color3.fromRGB(0, 255, 0)
+                    toggleButton.BackgroundColor3 = Color3.fromRGB(255, 0, 0)
+                    toggleButton.Text = "Выключить"
+                else
+                    statusLabel.Text = "НЕАКТИВЕН"
+                    statusLabel.TextColor3 = Color3.fromRGB(255, 0, 0)
+                    statusGUI.BorderColor3 = Color3.fromRGB(255, 0, 0)
+                    toggleButton.BackgroundColor3 = Color3.fromRGB(0, 255, 0)
+                    toggleButton.Text = "Включить"
+                end
+            end
+        end
+    end
 end)
 
 print("Blade Ball Advanced Trainer v3 успешно загружен!")
 print("Автоматическое парирование активировано на дистанции " .. PARRY_DISTANCE)
+print("Нажмите клавишу P для включения/выключения")
