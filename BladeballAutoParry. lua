@@ -1,0 +1,180 @@
+--[[
+    Blade Ball Advanced Trainer v3
+    by zxwhgdsushgs
+    GitHub: riti1556
+    
+    Автоматический парирование и использование способностей
+    
+    Функциональность:
+    - Автоматическое определение и парирование мяча
+    - Автоматическое использование способностей, когда они готовы
+    - Вращение камеры для лучшего парирования
+    - Виртуальная симуляция нажатия клавиш
+]]
+
+-- Сервисы Roblox
+local RunService = game:GetService("RunService")
+local VirtualInput = game:GetService("VirtualInputManager")
+local Players = game:GetService("Players")
+
+-- Получаем объекты игрока и камеры
+local player = Players.LocalPlayer
+local character = player.Character or player.CharacterAdded:Wait()
+local humanoidRootPart = character:WaitForChild("HumanoidRootPart")
+local camera = workspace.CurrentCamera
+
+-- Настройки скрипта
+local PARRY_DISTANCE = 7 -- Дистанция на которой происходит парирование
+local PARRY_KEY = Enum.KeyCode.E -- Клавиша для парирования
+local ABILITY_KEY = Enum.KeyCode.Q -- Клавиша для использования способности
+local CAMERA_ANGLE = 15 -- Угол для поворота камеры вверх (в градусах)
+local KEY_PRESS_DURATION = 0.1 -- Длительность нажатия клавиши в секундах
+
+-- Отслеживание состояний
+local parryingInProgress = false
+local lastParryTime = 0
+local parryDebounce = 0.3 -- Минимальное время между парированиями
+
+-- Функция имитации нажатия клавиши
+local function PressKey(key)
+    VirtualInput:SendKeyEvent(true, key, false, game)
+    task.wait(KEY_PRESS_DURATION)
+    VirtualInput:SendKeyEvent(false, key, false, game)
+end
+
+-- Функция для поворота камеры вверх перед парированием
+local function RotateCameraUp()
+    -- Сохраняем текущий угол камеры
+    local originalCFrame = camera.CFrame
+    
+    -- Поворачиваем камеру вверх
+    camera.CFrame = camera.CFrame * CFrame.Angles(-math.rad(CAMERA_ANGLE), 0, 0)
+    
+    -- Возвращаем оригинальный угол обзора через небольшую задержку
+    task.spawn(function()
+        task.wait(0.2) -- Даем время для парирования
+        camera.CFrame = originalCFrame
+    end)
+end
+
+-- Функция парирования
+local function Parry()
+    if tick() - lastParryTime < parryDebounce then
+        return -- Предотвращает слишком частое парирование
+    end
+    
+    parryingInProgress = true
+    lastParryTime = tick()
+    
+    -- Поворачиваем камеру вверх перед парированием для лучшей точности
+    RotateCameraUp()
+    task.wait(0.05) -- Небольшая задержка для синхронизации
+
+    -- Выполняем парирование
+    VirtualInput:SendKeyEvent(true, PARRY_KEY, false, game)
+    task.wait(KEY_PRESS_DURATION)
+    VirtualInput:SendKeyEvent(false, PARRY_KEY, false, game)
+    
+    parryingInProgress = false
+end
+
+-- Функция использования способности
+local function UseAbility()
+    PressKey(ABILITY_KEY)
+    print("Способность использована")
+end
+
+-- Проверка готовности способности
+local function IsAbilityReady()
+    local playerGui = player:FindFirstChild("PlayerGui")
+    if not playerGui then return false end
+    
+    -- Пытаемся найти кнопку способности в GUI
+    -- Примечание: структура GUI может меняться, поэтому может потребоваться настройка
+    local abilityButton = playerGui:FindFirstChild("AbilityButton")
+    if abilityButton and abilityButton.Text == "Ready" then
+        return true
+    end
+    
+    -- Альтернативный способ поиска элемента способности
+    local mainGui = playerGui:FindFirstChild("MainGui")
+    if mainGui then
+        local abilityFrame = mainGui:FindFirstChild("AbilityFrame")
+        if abilityFrame then
+            local readyLabel = abilityFrame:FindFirstChild("ReadyLabel")
+            if readyLabel and readyLabel.Visible then
+                return true
+            end
+        end
+    end
+    
+    return false
+end
+
+-- Функция проверки направления движения мяча к игроку
+local function IsBallComingTowards(ball)
+    if not ball or not humanoidRootPart then return false end
+    
+    local ballVelocity = ball:FindFirstChild("Velocity")
+    if not ballVelocity then return true end -- Если компонент скорости не найден, лучше перестраховаться
+    
+    local directionToPlayer = (humanoidRootPart.Position - ball.Position).Unit
+    local ballDirection = ballVelocity.Value.Unit
+    
+    -- Скалярное произведение для проверки направления мяча
+    local dotProduct = directionToPlayer:Dot(ballDirection)
+    
+    -- Если dotProduct > 0, мяч движется в сторону игрока
+    return dotProduct > 0
+end
+
+-- Функция расчета времени до контакта с мячом
+local function TimeToImpact(ball)
+    if not ball or not humanoidRootPart then return 999 end
+    
+    local distance = (ball.Position - humanoidRootPart.Position).Magnitude
+    local ballVelocity = ball:FindFirstChild("Velocity")
+    
+    if not ballVelocity or ballVelocity.Value.Magnitude == 0 then
+        return distance / 10 -- Примерная скорость если нет точных данных
+    end
+    
+    return distance / ballVelocity.Value.Magnitude
+end
+
+-- Основной цикл отслеживания мяча
+RunService.Heartbeat:Connect(function()
+    -- Проверяем существование персонажа и его корневой части
+    character = player.Character
+    if not character then return end
+    
+    humanoidRootPart = character:FindFirstChild("HumanoidRootPart")
+    if not humanoidRootPart then return end
+    
+    -- Ищем мяч на игровой сцене
+    local ball = workspace:FindFirstChild("Ball")
+    if ball then
+        local distance = (ball.Position - humanoidRootPart.Position).Magnitude
+        
+        -- Если мяч в диапазоне парирования и движется к игроку
+        if distance <= PARRY_DISTANCE and IsBallComingTowards(ball) and not parryingInProgress then
+            print("Парирование! Дистанция: " .. distance)
+            Parry()
+        end
+    end
+    
+    -- Проверяем готовность способности и используем её
+    if IsAbilityReady() then
+        UseAbility()
+    end
+end)
+
+-- Обработчик входа в игру или смены персонажа
+player.CharacterAdded:Connect(function(newCharacter)
+    character = newCharacter
+    humanoidRootPart = newCharacter:WaitForChild("HumanoidRootPart")
+    print("Персонаж загружен. Авто-парирование активировано!")
+end)
+
+print("Blade Ball Advanced Trainer v3 успешно загружен!")
+print("Автоматическое парирование активировано на дистанции " .. PARRY_DISTANCE)
